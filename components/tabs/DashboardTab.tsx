@@ -71,15 +71,37 @@ export function DashboardTab() {
     if (!project) return;
     try {
       setOpeningBlender(true);
-      const res = await fetch('/api/blender', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ project }),
-      });
-      if (!res.ok) {
-        // eslint-disable-next-line no-console
-        console.error('Failed to open Blender', await res.text());
-        alert('Failed to open Blender. Check the server logs for details.');
+      const isLocalhost =
+        typeof window !== 'undefined' &&
+        (window.location.hostname === 'localhost' ||
+          window.location.hostname === '127.0.0.1' ||
+          window.location.hostname === '0.0.0.0');
+
+      if (isLocalhost) {
+        const res = await fetch('/api/blender', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ project }),
+        });
+        if (!res.ok) {
+          // eslint-disable-next-line no-console
+          console.error('Failed to open Blender', await res.text());
+          alert('Failed to open Blender. Check the server logs for details.');
+        }
+      } else {
+        const perfJson = generatePerformanceJSON(project);
+        const blob = new Blob([JSON.stringify(perfJson, null, 2)], {
+          type: 'application/json',
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'performance-for-blender.json';
+        a.click();
+        URL.revokeObjectURL(url);
+        alert(
+          'Downloaded performance-for-blender.json. Open it with your local Blender bootstrap script.',
+        );
       }
     } catch (err) {
       // eslint-disable-next-line no-console
