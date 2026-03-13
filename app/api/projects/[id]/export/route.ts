@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
-import JSZip from 'jszip';
 import { getSupabaseServerClient } from '@/lib/supabaseServer';
 import type { Project } from '@/lib/types';
+import { migrateProject } from '@/lib/validation';
+import { exportProjectToOaisZip } from '@/lib/projectZip';
 
 type Params = { params: { id: string } };
 
@@ -25,17 +26,9 @@ export async function GET(_req: Request, { params }: Params) {
     return new Response('Not found', { status: 404 });
   }
 
-  const project = (data as any).data as Project;
+  const project = migrateProject((data as any).data as Project);
 
-  const zip = new JSZip();
-  zip.file('project.json', JSON.stringify(project, null, 2));
-  zip.file('metadata.json', JSON.stringify(project.meta ?? {}, null, 2));
-  zip.file('assets.json', JSON.stringify(project.assets ?? [], null, 2));
-  zip.file('media.json', JSON.stringify(project.media ?? [], null, 2));
-  zip.file('timeline.json', JSON.stringify(project.timeline ?? {}, null, 2));
-  zip.file('snapshots.json', JSON.stringify(project.snapshots ?? [], null, 2));
-  zip.file('devices.json', JSON.stringify(project.devices ?? { devices: [] }, null, 2));
-
+  const zip = await exportProjectToOaisZip(project);
   const content = await zip.generateAsync({ type: 'nodebuffer' });
 
   const safeName =

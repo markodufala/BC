@@ -23,6 +23,7 @@ export function Inspector() {
     updateMedia,
     updateCue,
     updateDevice,
+    updateSegment,
   } = useStore();
 
   if (!project) return null;
@@ -742,6 +743,80 @@ export function Inspector() {
             }}
             disabled={isReadOnly}
             className="font-mono text-xs min-h-40"
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (selectedEntityType === 'Segment') {
+    const segment = project.timeline.segments.find((s) => s.id === selectedEntityId);
+    if (!segment) return null;
+
+    const duration = segment.end - segment.start;
+
+    const handleStartChange = (value: string) => {
+      const start = parseFloat(value);
+      if (Number.isNaN(start)) return;
+      const newEnd = start + duration;
+      updateSegment(segment.id, { start, end: newEnd });
+    };
+
+    const handleEndChange = (value: string) => {
+      const end = parseFloat(value);
+      if (Number.isNaN(end)) return;
+      updateSegment(segment.id, { end });
+    };
+
+    const handleDurationChange = (value: string) => {
+      const dur = parseFloat(value);
+      if (Number.isNaN(dur) || dur <= 0) return;
+      const newEnd = segment.start + dur;
+      updateSegment(segment.id, { end: newEnd });
+    };
+
+    return (
+      <div className="p-4 space-y-4">
+        <h3 className="font-semibold mb-4">Time Segment Inspector</h3>
+
+        <div>
+          <label className="text-sm font-medium mb-2 block">Name</label>
+          <Input
+            value={segment.name}
+            onChange={(e) => updateSegment(segment.id, { name: e.target.value })}
+            disabled={isReadOnly}
+          />
+        </div>
+
+        <div>
+          <label className="text-sm font-medium mb-2 block">Start (sec)</label>
+          <Input
+            type="number"
+            step="0.1"
+            value={segment.start}
+            onChange={(e) => handleStartChange(e.target.value)}
+            disabled={isReadOnly}
+          />
+        </div>
+        <div>
+          <label className="text-sm font-medium mb-2 block">End (sec)</label>
+          <Input
+            type="number"
+            step="0.1"
+            value={segment.end}
+            onChange={(e) => handleEndChange(e.target.value)}
+            disabled={isReadOnly}
+          />
+        </div>
+        <div>
+          <label className="text-sm font-medium mb-2 block">Duration (sec)</label>
+          <Input
+            type="number"
+            step="0.1"
+            min="0"
+            value={duration.toFixed(1)}
+            onChange={(e) => handleDurationChange(e.target.value)}
+            disabled={isReadOnly}
           />
         </div>
       </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { storage } from '@/lib/storage';
 import { Project } from '@/lib/types';
@@ -13,13 +13,17 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Trash2, Copy, FolderOpen } from 'lucide-react';
+import { Trash2, Copy, FolderOpen, Upload } from 'lucide-react';
+import { parseProjectOaisZip, isProjectZipError, ProjectZipError } from '@/lib/projectZip';
 
 export default function Home() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [newProjectName, setNewProjectName] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<ProjectZipError | null>(null);
   const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadProjects = () => {
     setProjects(storage.getAllProjects());
@@ -54,6 +58,51 @@ export default function Home() {
     }
   };
 
+  const handleImportZipClick = () => {
+    setImportError(null);
+    fileInputRef.current?.click();
+  };
+
+  const handleImportZipChange: React.ChangeEventHandler<HTMLInputElement> = async (
+    event,
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setImporting(true);
+    try {
+      const buffer = await file.arrayBuffer();
+      const { project } = await parseProjectOaisZip(buffer);
+
+      const nowIso = new Date().toISOString();
+      const newProject: Project = {
+        ...project,
+        id: crypto.randomUUID(),
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+
+      storage.saveProject(newProject);
+      loadProjects();
+      router.push(`/project/${newProject.id}`);
+    } catch (err) {
+      if (isProjectZipError(err)) {
+        setImportError(err);
+      } else {
+        setImportError({
+          kind: 'internal',
+          title: 'Import failed',
+          message: 'An unexpected error occurred while importing the project ZIP.',
+        });
+      }
+    } finally {
+      setImporting(false);
+      if (event.target) {
+        event.target.value = '';
+      }
+    }
+  };
+
   const handleDelete = (id: string) => {
     if (confirm('Delete this project?')) {
       storage.deleteProject(id);
@@ -71,28 +120,67 @@ export default function Home() {
       <div className="max-w-6xl mx-auto">
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-3xl font-bold">Performance Editor</h1>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button>New Project</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Create New Project</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 pt-4">
-                <Input
-                  placeholder="Project name"
-                  value={newProjectName}
-                  onChange={(e) => setNewProjectName(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-                />
-                <Button onClick={handleCreate} className="w-full">
-                  Create
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+          <div className="flex items-center gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".zip"
+              className="hidden"
+              onChange={handleImportZipChange}
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleImportZipClick}
+              disabled={importing}
+              className="flex items-center gap-2"
+            >
+              <Upload className="h-4 w-4" />
+              <span className="text-xs">
+                {importing ? 'Importing…' : 'Import Project ZIP'}
+              </span>
+            </Button>
+            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm">New Project</Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Create New Project</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 pt-4">
+                  <Input
+                    placeholder="Project name"
+                    value={newProjectName}
+                    onChange={(e) => setNewProjectName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+                  />
+                  <Button onClick={handleCreate} className="w-full">
+                    Create
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
+
+        {importError && (
+          <div className="mb-4 rounded-md border border-destructive/50 bg-destructive/10 p-4 text-sm">
+            <p className="font-semibold">
+              {importError.title ?? 'Import error'}
+            </p>
+            <p className="mt-1">{importError.message}</p>
+            {Array.isArray(importError.details) && importError.details.length > 0 && (
+              <ul className="mt-2 list-disc list-inside space-y-1">
+                {importError.details.map((d, i) => (
+                  <li key={i}>
+                    {d.path} – {d.message}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
 
         {projects.length === 0 ? (
           <div className="text-center py-16 text-muted-foreground">

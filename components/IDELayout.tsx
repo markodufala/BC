@@ -1,6 +1,4 @@
 'use client';
-
-import JSZip from 'jszip';
 import { useStore } from '@/lib/store';
 import { ProjectTree } from './ProjectTree';
 import { TabsPanel } from './TabsPanel';
@@ -12,6 +10,7 @@ import { ArrowLeft, Download } from 'lucide-react';
 import { useEffect } from 'react';
 import { ThemeToggle } from './ThemeToggle';
 import { useToast } from '@/hooks/use-toast';
+import { exportProjectToOaisZip } from '@/lib/projectZip';
 
 export function IDELayout() {
   const { project, runChecks, saveProject, problemsPanelOpen } = useStore();
@@ -38,21 +37,7 @@ export function IDELayout() {
 
   const handleExport = async () => {
     try {
-      const zip = new JSZip();
-      zip.file('project.json', JSON.stringify(project, null, 2));
-      zip.file('metadata.json', JSON.stringify(project.meta ?? {}, null, 2));
-      zip.file('assets.json', JSON.stringify(project.assets ?? [], null, 2));
-      zip.file('media.json', JSON.stringify(project.media ?? [], null, 2));
-      zip.file('timeline.json', JSON.stringify(project.timeline ?? {}, null, 2));
-      zip.file(
-        'snapshots.json',
-        JSON.stringify(project.snapshots ?? [], null, 2),
-      );
-      zip.file(
-        'devices.json',
-        JSON.stringify(project.devices ?? { devices: [] }, null, 2),
-      );
-
+      const zip = await exportProjectToOaisZip(project);
       const blob = await zip.generateAsync({ type: 'blob' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');

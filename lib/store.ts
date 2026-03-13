@@ -10,7 +10,7 @@ type State = {
   selectedEntityType: string | null;
   problemsPanelOpen: boolean;
   playheadTime: number;
-  timelineSubTab: 'visual' | 'segments' | 'cues';
+  timelineSubTab: 'visual' | 'segments';
   checksRunning: boolean;
   checksProgress: number;
 
@@ -24,7 +24,7 @@ type State = {
   selectEntity: (type: string | null, id: string | null) => void;
   toggleProblemsPanel: () => void;
   setPlayheadTime: (time: number) => void;
-  setTimelineSubTab: (tab: 'visual' | 'segments' | 'cues') => void;
+  setTimelineSubTab: (tab: 'visual' | 'segments') => void;
   updateMedia: (id: string, data: Partial<MediaItem>) => void;
 
   addDevice: (device: Omit<Device, 'id'> & { id?: string }) => void;

@@ -1,3 +1,10 @@
+export type OaisAuxFile = {
+  path: string;
+  contentType?: string;
+  data: string;
+  binary?: boolean;
+};
+
 export type Project = {
   id: string;
   name: string;
@@ -16,6 +23,11 @@ export type Project = {
      * Optional, used by v3 export/validation. If absent we compute from cues.
      */
     durationSec?: number;
+    /**
+     * Optional, used by OAIS-style ZIP import/export to preserve auxiliary files
+     * such as media, mocap, docs, and metadata files.
+     */
+    oaisAuxFiles?: { [relativePath: string]: OaisAuxFile };
   };
   assets: Asset[];
   media: MediaItem[];

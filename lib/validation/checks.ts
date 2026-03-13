@@ -25,7 +25,7 @@ function createItem(
 const ajv = new Ajv({ allErrors: true, strict: false });
 addFormats(ajv);
 
-const performanceSchema = {
+export const performanceSchema = {
   type: 'object',
   required: ['meta', 'space', 'synchronization', 'cues', 'assets'],
   additionalProperties: false,
@@ -151,7 +151,7 @@ const performanceSchema = {
   },
 } as const;
 
-const devicesSchema = {
+export const devicesSchema = {
   type: 'object',
   required: ['devices'],
   additionalProperties: false,
@@ -247,8 +247,8 @@ const devicesSchema = {
   },
 } as const;
 
-const validatePerformance = ajv.compile(performanceSchema);
-const validateDevices = ajv.compile(devicesSchema);
+export const validatePerformance = ajv.compile(performanceSchema);
+export const validateDevices = ajv.compile(devicesSchema);
 
 function pointerForAjv(err: ErrorObject): string {
   return err.instancePath && err.instancePath.length > 0 ? err.instancePath : '/';

@@ -3,13 +3,25 @@
 import { useStore } from '@/lib/store';
 import { Button } from '../ui/button';
 import { ZoomIn, ZoomOut } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export function TimelineVisualTab() {
-  const { project, playheadTime, setPlayheadTime, selectEntity } = useStore();
+  const { project, playheadTime, setPlayheadTime, selectEntity, updateSegment } =
+    useStore();
   const [zoom, setZoom] = useState(100);
+  const [draggingSegmentId, setDraggingSegmentId] = useState<string | null>(
+    null
+  );
+  const [dragOffsetSec, setDragOffsetSec] = useState(0);
+  const [currentDragStart, setCurrentDragStart] = useState<number | null>(null);
+  const [resizingSegmentId, setResizingSegmentId] = useState<string | null>(null);
+  const [resizeEdge, setResizeEdge] = useState<'start' | 'end' | null>(null);
+
+  const timelineRef = useRef<HTMLDivElement | null>(null);
 
   if (!project) return null;
+
+  const isReadOnly = project.mode === 'archivist';
 
   const maxEnd = Math.max(
     ...project.timeline.segments.map((s) => s.end),
@@ -27,11 +39,6 @@ export function TimelineVisualTab() {
   const timelineWidth = maxEnd * pxPerSec;
 
   const segmentsByTrack = project.timeline.segments;
-  const cuesByType: { [key: string]: typeof project.timeline.cues } = {};
-  project.timeline.cues.forEach((cue) => {
-    if (!cuesByType[cue.type]) cuesByType[cue.type] = [];
-    cuesByType[cue.type].push(cue);
-  });
 
   const handlePlayheadClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -39,10 +46,83 @@ export function TimelineVisualTab() {
     setPlayheadTime(x / pxPerSec);
   };
 
+  const handleSegmentMouseDown = (
+    e: React.MouseEvent<HTMLDivElement>,
+    segmentId: string
+  ) => {
+    if (isReadOnly || resizingSegmentId) return;
+    e.stopPropagation();
+    const rect = timelineRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const clickX = e.clientX - rect.left;
+    const segment = project.timeline.segments.find((s) => s.id === segmentId);
+    if (!segment) return;
+    const offsetSec = clickX / pxPerSec - segment.start;
+    setDraggingSegmentId(segmentId);
+    setDragOffsetSec(offsetSec);
+    setCurrentDragStart(segment.start);
+  };
+
+  const handleTimelineMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!draggingSegmentId && !resizingSegmentId) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    if (draggingSegmentId) {
+      const segment = project.timeline.segments.find(
+        (s) => s.id === draggingSegmentId
+      );
+      if (!segment) return;
+      const newStart = Math.max(0, x / pxPerSec - dragOffsetSec);
+      setCurrentDragStart(newStart);
+    } else if (resizingSegmentId && resizeEdge) {
+      const segment = project.timeline.segments.find(
+        (s) => s.id === resizingSegmentId
+      );
+      if (!segment) return;
+      const timeAtCursor = Math.max(0, x / pxPerSec);
+      if (resizeEdge === 'start') {
+        const clamped = Math.min(timeAtCursor, segment.end - 0.1);
+        updateSegment(segment.id, { start: clamped });
+      } else {
+        const clamped = Math.max(timeAtCursor, segment.start + 0.1);
+        updateSegment(segment.id, { end: clamped });
+      }
+    }
+  };
+
+  const handleTimelineMouseUp = () => {
+    if (draggingSegmentId && currentDragStart !== null) {
+      const segment = project.timeline.segments.find(
+        (s) => s.id === draggingSegmentId
+      );
+      if (segment) {
+        const duration = segment.end - segment.start;
+        const newStart = Math.max(0, currentDragStart);
+        const newEnd = newStart + duration;
+        updateSegment(segment.id, { start: newStart, end: newEnd });
+      }
+    }
+    setDraggingSegmentId(null);
+    setCurrentDragStart(null);
+    setResizingSegmentId(null);
+    setResizeEdge(null);
+  };
+
+  useEffect(() => {
+    const handleWindowMouseUp = () => {
+      handleTimelineMouseUp();
+    };
+
+    window.addEventListener('mouseup', handleWindowMouseUp);
+    return () => {
+      window.removeEventListener('mouseup', handleWindowMouseUp);
+    };
+  });
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="font-semibold">Timeline Visualization (Read-Only)</h3>
+        <h3 className="font-semibold">Timeline Visualization</h3>
         <div className="flex gap-2">
           <Button
             variant="outline"
@@ -84,27 +164,65 @@ export function TimelineVisualTab() {
           <div
             className="relative bg-primary/10 border rounded"
             style={{ height: 200, width: timelineWidth }}
+            ref={timelineRef}
             onClick={handlePlayheadClick}
+            onMouseMove={handleTimelineMouseMove}
           >
-            {segmentsByTrack.map((segment) => (
-              <div
-                key={segment.id}
-                className="absolute bg-blue-200 border border-blue-400 opacity-70 hover:opacity-100 cursor-pointer"
-                style={{
-                  left: segment.start * pxPerSec,
-                  width: Math.max(2, (segment.end - segment.start) * pxPerSec),
-                  height: 30,
-                  top: 10,
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  selectEntity('Segment', segment.id);
-                }}
-                title={segment.name}
-              >
-                <div className="text-xs px-1 truncate">{segment.name}</div>
-              </div>
-            ))}
+            {segmentsByTrack.map((segment) => {
+              const isDragging = draggingSegmentId === segment.id;
+              const start =
+                isDragging && currentDragStart !== null
+                  ? currentDragStart
+                  : segment.start;
+              const width = Math.max(2, (segment.end - segment.start) * pxPerSec);
+
+              return (
+                <div
+                  key={segment.id}
+                  className="absolute"
+                  style={{
+                    left: start * pxPerSec,
+                    width,
+                    height: 30,
+                    top: 10,
+                  }}
+                >
+                  {!isReadOnly && (
+                    <>
+                      <div
+                        className="absolute left-0 top-0 h-full w-1 bg-blue-600 cursor-ew-resize opacity-0 hover:opacity-100"
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          setResizingSegmentId(segment.id);
+                          setResizeEdge('start');
+                        }}
+                      />
+                      <div
+                        className="absolute right-0 top-0 h-full w-1 bg-blue-600 cursor-ew-resize opacity-0 hover:opacity-100"
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          setResizingSegmentId(segment.id);
+                          setResizeEdge('end');
+                        }}
+                      />
+                    </>
+                  )}
+                  <div
+                    className={`h-full bg-blue-200 border border-blue-400 opacity-70 hover:opacity-100 ${
+                      isReadOnly ? 'cursor-pointer' : 'cursor-move'
+                    }`}
+                    onMouseDown={(e) => handleSegmentMouseDown(e, segment.id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      selectEntity('Segment', segment.id);
+                    }}
+                    title={segment.name}
+                  >
+                    <div className="text-xs px-1 truncate">{segment.name}</div>
+                  </div>
+                </div>
+              );
+            })}
 
             <div
               className="absolute w-0.5 bg-red-500 pointer-events-none"
@@ -116,82 +234,7 @@ export function TimelineVisualTab() {
             />
           </div>
 
-          {Object.entries(cuesByType).map(([type, cues]) => (
-            <div key={type}>
-              <div className="text-xs font-semibold text-muted-foreground mb-2 capitalize">
-                {type} Cues
-              </div>
-              <div
-                className="relative bg-muted border rounded"
-                style={{ height: 80, width: timelineWidth }}
-                onClick={handlePlayheadClick}
-              >
-                {cues.map((cue) => {
-                  const computed =
-                    cue.type === 'audio' && !cue.end && cue.mediaFile
-                      ? (() => {
-                          const media = project.media.find(
-                            (m) => m.fileName === cue.mediaFile
-                          );
-                          return media?.durationSec
-                            ? cue.start + media.durationSec
-                            : undefined;
-                        })()
-                      : undefined;
-
-                  const end = cue.end || computed;
-
-                  return end ? (
-                    <div
-                      key={cue.id}
-                      className="absolute bg-green-200 border border-green-400 opacity-70 hover:opacity-100 cursor-pointer text-xs overflow-hidden"
-                      style={{
-                        left: cue.start * pxPerSec,
-                        width: Math.max(
-                          2,
-                          (end - cue.start) * pxPerSec
-                        ),
-                        height: 30,
-                        top: 10,
-                        borderStyle: computed ? 'dashed' : 'solid',
-                      }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        selectEntity('Cue', cue.id);
-                      }}
-                      title={cue.name}
-                    >
-                      <div className="px-1 truncate">{cue.name}</div>
-                    </div>
-                  ) : (
-                    <div
-                      key={cue.id}
-                      className="absolute w-1 bg-orange-400 hover:bg-orange-500 cursor-pointer"
-                      style={{
-                        left: cue.start * pxPerSec,
-                        height: '100%',
-                        top: 0,
-                      }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        selectEntity('Cue', cue.id);
-                      }}
-                      title={cue.name}
-                    />
-                  );
-                })}
-
-                <div
-                  className="absolute w-0.5 bg-red-500 pointer-events-none"
-                  style={{
-                    left: playheadTime * pxPerSec,
-                    height: '100%',
-                    top: 0,
-                  }}
-                />
-              </div>
-            </div>
-          ))}
+          {/* cues visualization removed to focus on time segments */}
         </div>
       </div>
 
